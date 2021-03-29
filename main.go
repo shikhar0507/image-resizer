@@ -130,28 +130,52 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 
 	//var opt Options
 	//opt = Options{Quality: 75}
-	imageGray := getImageGrayscale(dec,prop.width,prop.height)
-	jpeg.Encode(f,blurImage(imageGray,prop.width,prop.height,9),&jpeg.Options{Quality: 100})
+	//imageGray := getImageGrayscale(dec,prop.width,prop.height)
+	jpeg.Encode(f,colorize(dec,prop.width,prop.height),&jpeg.Options{Quality: 100})
 	fmt.Println("done")
 	return nil,nil
+}
+
+func brightnessAdjust(dec image.Image,width float64,height float64,factor int) image.Image {
+	newImage := image.NewRGBA(image.Rect(0,0,int(width),int(height)))
+	for x:=0;x < int(width);x++ {
+		for y:=0;y < int(height);y++ {
+			r,g,b,a := dec.At(x,y).RGBA()
+
+			newImage.Set(x,y,color.RGBA{R: getAdjustedPixel(r,factor),G:getAdjustedPixel(g,factor),B:getAdjustedPixel(b,factor),A:getAdjustedPixel(a,factor)})
+
+		}
+	}
+	return newImage
+}
+
+
+func getAdjustedPixel(value uint32,factor int) uint8 {
+	px := uint8(value/257)
+	adjusted := int(px) + factor
+	if adjusted < 0 {
+		return 0
+	}
+	if adjusted > 255 {
+		return  255
+	}
+	return uint8(adjusted)
 }
 
 
 func blurImage(dec image.Image,width float64,height float64,blurRadius int) image.Image {
 	newImage := image.NewGray(image.Rect(0,0,int(width),int(height)))
+	blurOff := (blurRadius-1)/2
+
 	for x:= 0; x< int(width);x++ {
 		for y:=0; y < int(height);y++ {
-			//pos := dec.At(x,y)
-			//blur radius loop
 			totalValue := 0
-			blurOff := (blurRadius-1)/2
 			for i:= -blurOff;i <= blurOff;i++ {
 				for j := -blurOff;j <= blurOff;j++ {
 						pxA,_,_,_ := dec.At(x+i,y+j).RGBA()
 						totalValue  = totalValue + (int(pxA) * 1)
 				}
 			}
-			//fmt.Println(uint8((totalValue/(blurRadius)*2)/257))
 			newImage.SetGray(x,y,color.Gray{Y: uint8((totalValue/257)/(blurRadius*blurRadius))})
 		}
 	}
