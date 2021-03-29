@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	_ "image/png"
 	"math"
 	"os"
@@ -26,19 +27,21 @@ import (
 type Properties struct {
 	url string
 	width ,height float64
+	filter string
 	//ext Extension
 }
+=
 //var extension Extension
 var property Properties
 
 
 func main() {
 
-	//extension = Extension{jpeg: 1,png: 2,jpg: 3}
 	http.HandleFunc("/",handleRequest)
 	http.HandleFunc("/favicon.ico",handleFavicon)
-
 	log.Fatal(http.ListenAndServe(":8080",nil))
+
+
 }
 
 func handleFavicon(w http.ResponseWriter , r *http.Request) {
@@ -55,19 +58,25 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if width == "" {
-		http.Error(w,"width is not provided",http.StatusBadRequest)
-	}
-	if height == "" {
-		http.Error(w,"height is not provided",http.StatusBadRequest)
-	}
+
 	wd,werr := strconv.Atoi(width)
 	hg, herr := strconv.Atoi(height)
+
+	if width == "" && height != "" {
+		http.Error(w,"error parsing the width",http.StatusInternalServerError)
+		return
+	}
+	if height == "" && width != "" {
+		http.Error(w,"error parsing the height",http.StatusInternalServerError)
+		return
+	}
+
 
 	if werr !=nil {
 		http.Error(w,"error parsing the width",http.StatusInternalServerError)
 		return
 	}
+
 	if herr != nil {
 		http.Error(w,"error parsing the height",http.StatusInternalServerError)
 		return
@@ -81,7 +90,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	property = Properties{url: url,width: float64(wd),height: float64(hg)}
+	//property = Properties{url: url,width: float64(wd),height: float64(hg)}
 	loadImageFromUrl(property)
 }
 
@@ -94,18 +103,33 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 		return nil,err
 	}
 	defer resp.Body.Close()
-
-
-	dec ,err := jpeg.Decode(resp.Body)
-	//newImage := image.NewRGBA(image.Rect(0,0,int(prop.width),int(prop.height)))
-
-
-	if err != nil {
-		log.Fatal("error decoding jpeg",err)
+	dec,imageType, err := image.Decode(resp.Body)
+	var decodedImage image.Image
+	var decodedError error
+	switch imageType {
+	case "png":
+		decodedImage, decodedError = png.Decode(resp.Body)
+	case "jpg":
+		decodedImage, decodedError = jpeg.Decode(resp.Body)
+	}
+	if decodedError != nil {
+		return nil,decodedError
 	}
 
-	//sourceWidth := float64(dec.Bounds().Size().X)
-	//sourceHeight := float64(dec.Bounds().Size().Y)
+
+	sourceWidth := float64(dec.Bounds().Size().X)
+	if prop.width != 0 {
+		sourceWidth = prop.width
+	}
+
+	sourceHeight := float64(dec.Bounds().Size().Y)
+	if prop.height != 0 {
+		sourceHeight = prop.height
+	}
+
+
+
+
 	//for i:= float64(0) ; i< prop.width;i++ {
 	//	x :=  int(math.Round((i/prop.width)* sourceWidth))
 	//	for j := float64(0);j<prop.height;j++ {
@@ -123,83 +147,13 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 	//fmt.Println("new image bounds", newImage.Bounds().Size())
 	//draw.Draw(newImage,newImage.Bounds(),newImage,image.Pt(0,0),draw.Src)
 
-	f, err := os.Create("i.jpg")
+	f, err := os.Create("3.jpg")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	//var opt Options
-	//opt = Options{Quality: 75}
-	//imageGray := getImageGrayscale(dec,prop.width,prop.height)
-	jpeg.Encode(f,colorize(dec,prop.width,prop.height),&jpeg.Options{Quality: 100})
+
+	jpeg.Encode(f,g,&jpeg.Options{Quality: 100})
 	fmt.Println("done")
 	return nil,nil
-}
-
-func brightnessAdjust(dec image.Image,width float64,height float64,factor int) image.Image {
-	newImage := image.NewRGBA(image.Rect(0,0,int(width),int(height)))
-	for x:=0;x < int(width);x++ {
-		for y:=0;y < int(height);y++ {
-			r,g,b,a := dec.At(x,y).RGBA()
-
-			newImage.Set(x,y,color.RGBA{R: getAdjustedPixel(r,factor),G:getAdjustedPixel(g,factor),B:getAdjustedPixel(b,factor),A:getAdjustedPixel(a,factor)})
-
-		}
-	}
-	return newImage
-}
-
-
-func getAdjustedPixel(value uint32,factor int) uint8 {
-	px := uint8(value/257)
-	adjusted := int(px) + factor
-	if adjusted < 0 {
-		return 0
-	}
-	if adjusted > 255 {
-		return  255
-	}
-	return uint8(adjusted)
-}
-
-
-func blurImage(dec image.Image,width float64,height float64,blurRadius int) image.Image {
-	newImage := image.NewGray(image.Rect(0,0,int(width),int(height)))
-	blurOff := (blurRadius-1)/2
-
-	for x:= 0; x< int(width);x++ {
-		for y:=0; y < int(height);y++ {
-			totalValue := 0
-			for i:= -blurOff;i <= blurOff;i++ {
-				for j := -blurOff;j <= blurOff;j++ {
-						pxA,_,_,_ := dec.At(x+i,y+j).RGBA()
-						totalValue  = totalValue + (int(pxA) * 1)
-				}
-			}
-			newImage.SetGray(x,y,color.Gray{Y: uint8((totalValue/257)/(blurRadius*blurRadius))})
-		}
-	}
-	return newImage
-}
-
-
-func getImageGrayscale(dec image.Image,width float64,height float64) image.Image {
-	newImage := image.NewGray(image.Rect(0,0,int(width),int(height)))
-	sourceWidth := float64(dec.Bounds().Size().X)
-	sourceHeight := float64(dec.Bounds().Size().Y)
-	for i:= float64(0) ; i< width;i++ {
-		x :=  int(math.Round((i/width)* sourceWidth))
-		for j := float64(0);j<height;j++ {
-			y := int(math.Round((j/height) * sourceHeight))
-			col := dec.At(x,y)
-			r,g,b,_ := col.RGBA()
-
-			R ,G,B := float64(r)*0.299,float64(g)*0.587,float64(b)*0.114
-			tot := uint8((R+G+B)/257)
-			//fmt.Println(R,G,B)
-			//uintR ,uintG,uintb := uint8(r/257),uint8(g/257),uint8(b/257)
-			newImage.SetGray(int(i),int(j),color.Gray{Y:tot})
-		}
-	}
-	return newImage
 }
