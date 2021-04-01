@@ -5,14 +5,15 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"image/png"
+	_ "image/jpeg"
 	_ "image/png"
 	"math"
 	"os"
 	"log"
 	"net/http"
 	"strconv"
-	"image-reizer/filters"
+	"image-resizer/filters"
+	//"github.com/shikhar0507/image-resizer"
 )
 
 
@@ -95,20 +96,20 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 		return nil,err
 	}
 	defer resp.Body.Close()
-	dec,imageType, err := image.Decode(resp.Body)
-	var decodedImage image.Image
-	var decodedError error
-	switch imageType {
-	case "png":
-		decodedImage, decodedError = png.Decode(resp.Body)
-	case "jpg":
-		decodedImage, decodedError = jpeg.Decode(resp.Body)
+	respBody := resp.Body
+	decodedImage,_ ,err := image.Decode(respBody)
+	//fmt.Println("type",imageType)
+
+	if err != nil {
+		fmt.Println(err)
+		return nil,err
 	}
-	if decodedError != nil {
-		return nil,decodedError
+	if decodedImage == nil {
+		fmt.Println("null image")
+		return nil,nil
 	}
 
-	imageBound = dec.Bounds().Size()
+	imageBound := decodedImage.Bounds().Size()
 	sourceWidth := float64(imageBound.X)
 	if prop.width != 0 {
 		sourceWidth = prop.width
@@ -120,11 +121,14 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 	}
 
 	var baseImage image.Image
-	if imageBound.X != prop.width || imageBound.Y != prop.height {
-	   baseImage = resize(dec,sourceWidth,sourceHeight)
+	if imageBound.X != int(prop.width) || imageBound.Y != int(prop.height) {
+		fmt.Println("start resizing")
+	   baseImage = resize(decodedImage,prop.width,prop.height, float64(imageBound.X),float64(imageBound.Y))
 	}
+
 	var modifiedImage image.Image
-	siwtch prop.filter {
+
+	switch prop.filter {
 	       case "sepia":
 	       	    modifiedImage = filters.Sepia(baseImage,sourceWidth,sourceHeight)
 	       case "blackAndWhite":
@@ -134,10 +138,10 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 	       case "grayscale":
 	       	    modifiedImage = filters.Grayscale(baseImage,sourceWidth,sourceHeight)
 	       case "brightness":
-	       	    bo := filters.BrightnessOptions{Factor:30}
-	       	    modifiedImage = filters.BrightnessAdjust(baseImage,sourceWidth,sourceHeight.bo)
+	       	    bo := filters.BrightnessOptions{Factor:150}
+	       	    modifiedImage = filters.BrightnessAdjust(baseImage,sourceWidth,sourceHeight,bo)
 	      case "blur":
-	      	   bo := filters.BlurOptions{Radius:3}
+	      	   bo := filters.BlurOptions{Radius:-3}
 		   modifiedImage = filters.Blur(baseImage,sourceWidth,sourceHeight,bo)
 	     default:
 		   modifiedImage = baseImage
@@ -156,15 +160,15 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 	return nil,nil
 }
 
-func resize(dec image.Image,width float64,height float64) image.Image {
-     newImage := image.NewRGBA(image.Rect(0,0,int(width),int(height))
-     for i:= float64(0) ; i< prop.width;i++ {
-     	 x :=  int(math.Round((i/prop.width)* sourceWidth))
-  	   for j := float64(0);j<prop.height;j++ {
-               y := int(math.Round((j/prop.height) * sourceHeight))
+func resize(dec image.Image,width float64,height float64,sourceWidth float64,sourceHeight float64) image.Image {
+     newImage := image.NewRGBA(image.Rect(0,0,int(width),int(height)))
+     for i:= float64(0) ; i< width;i++ {
+     	 x :=  int(math.Round((i/width)* sourceWidth))
+  	   for j := float64(0);j<height;j++ {
+               y := int(math.Round((j/height) * sourceHeight))
                col := dec.At(x,y)
-               r,g,b, := col.RGBA()
-	       uintR ,uintG,uintb,uinta := uint8(r/257),uint8(g/257),uint8(b/257),uint8(a/257)
+               r,g,b,a := col.RGBA()
+	       uintR ,uintG,uintB,uintA := uint8(r/257),uint8(g/257),uint8(b/257),uint8(a/257)
 	       newImage.SetRGBA(int(i),int(j),color.RGBA{R: uintR,G: uintG,B: uintB,A:uintA})
   	       }
 	  }

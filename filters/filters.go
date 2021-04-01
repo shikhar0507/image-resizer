@@ -1,7 +1,6 @@
 package filters
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -19,7 +18,7 @@ type BlurOptions struct {
 }
 
 
-func BrightnessAdjust(dec image.Image,width float64,height float64,bo BrightnessOptions) image.RGBA {
+func BrightnessAdjust(dec image.Image,width float64,height float64,bo BrightnessOptions) image.Image {
 	newImage := image.NewRGBA(image.Rect(0,0,int(width),int(height)))
 	for x:=0;x < int(width);x++ {
 		for y:=0;y < int(height);y++ {
@@ -28,7 +27,7 @@ func BrightnessAdjust(dec image.Image,width float64,height float64,bo Brightness
 		}
 	}
 
-	return *newImage
+	return newImage
 }
 
 
@@ -46,29 +45,27 @@ func getAdjustedPixel(value uint32,factor float64,alpha float64) uint8 {
 }
 
 
-func BlackAndWhite(dec image.Image,width float64,height float64) image.Gray {
+func BlackAndWhite(dec image.Image,width float64,height float64) image.Image {
 	newImage := image.NewGray(image.Rect(0, 0, int(width), int(height)))
 	grayScaled := Grayscale(dec,width,height)
 
 	for x := 0; x < int(width); x++ {
 		for y := 0; y < int(height); y++ {
-			grayValue := grayScaled.GrayAt(x,y).Y
-			//gr := uint8(yr/257)
-			//r,g,b := 0,0,0
-			//fmt.Println(gr)
-			if 255 - grayValue < grayValue {
-				grayValue = 255
+			grayValue,_,_,_ := grayScaled.At(x,y).RGBA()
+			uintGray := uint8(grayValue/257)
+			if 255 - uintGray < uintGray {
+				uintGray = 255
 			}else {
-				grayValue = 0
+				uintGray = 0
 			}
-			newImage.SetGray(x,y,color.Gray{Y: grayValue})
+			newImage.SetGray(x,y,color.Gray{Y: uintGray})
 		}
 	}
 
-	return *newImage
+	return newImage
 }
 
-func BlackAndWhiteSmooth(dec image.Image,width float64,height float64) image.Gray {
+func BlackAndWhiteSmooth(dec image.Image,width float64,height float64) image.Image {
 	newImage := image.NewGray(image.Rect(0, 0, int(width), int(height)))
 	transformed := BlackAndWhite(dec,width,height)
 
@@ -78,7 +75,7 @@ func BlackAndWhiteSmooth(dec image.Image,width float64,height float64) image.Gra
 			blackCount,whiteCount := 0,0
 			for i:= -3;i <= 3;i++ {
 				for j := -3; j <= 3; j++ {
-					val := transformed.GrayAt(x,y).Y
+					val,_,_,_ := transformed.At(x,y).RGBA()
 					if val == 0 {
 						blackCount++
 					}else {
@@ -92,10 +89,10 @@ func BlackAndWhiteSmooth(dec image.Image,width float64,height float64) image.Gra
 			newImage.SetGray(x,y,color.Gray{Y: gr})
 		}
 	}
-	return *newImage
+	return newImage
 }
 
-func Sepia(dec image.Image,width float64,height float64) image.RGBA {
+func Sepia(dec image.Image,width float64,height float64) image.Image {
 	newImage := image.NewRGBA(image.Rect(0,0,int(width),int(height)))
 
 	for x:= 0; x< int(width);x++ {
@@ -115,7 +112,6 @@ func Sepia(dec image.Image,width float64,height float64) image.RGBA {
 			if nb > 255 {
 				nb = 255
 			}
-			fmt.Println(nr,ng,nb)
 			newImage.Set(x,y,color.RGBA{
 				R: uint8(nr),
 				G: uint8(ng),
@@ -125,35 +121,39 @@ func Sepia(dec image.Image,width float64,height float64) image.RGBA {
 
 	}
 
-	return *newImage
+	return newImage
 }
 
 
 
 
-func Blur(dec image.Image,width float64,height float64,bo BlurOptions) image.RGBA {
+func Blur(dec image.Image,width float64,height float64,bo BlurOptions) image.Image {
 	newImage := image.NewRGBA(image.Rect(0,0,int(width),int(height)))
 	blurOff := (bo.Radius-1)/2
-	size := bo.Radius * bo.Radius
+
 	for x:= 0; x< int(width);x++ {
 		for y:=0; y < int(height);y++ {
-			totalR,totalG,totalB := uint8(0),uint8(0),uint8(0)
+			totalR,totalG,totalB,totalA := 0,0,0,0
+			size := 0
 			for i:= -blurOff;i <= blurOff;i++ {
 				for j := -blurOff;j <= blurOff;j++ {
-					pxR,pxG,pxB,_ := dec.At(x+i,y+j).RGBA()
-					totalR += uint8(pxR/257)
-					totalG += uint8(pxG/257)
-					totalB +=uint8(pxB/257)
+					size++
+					pxR,pxG,pxB,pxA := dec.At(x+i,y+j).RGBA()
+					totalR += int(pxR)
+					totalG += int(pxG)
+					totalB += int(pxB)
+					totalA += int(pxA)
 				}
 			}
-			newImage.SetRGBA(x,y,color.RGBA{R: totalR/uint8(size),G: totalG/uint8(size),B: totalB/uint8(size)})
+
+			newImage.SetRGBA(x,y,color.RGBA{R:uint8((totalR/size)/257),G: uint8((totalG/size)/257),B: uint8((totalB/size)/257),A: uint8((totalA/size)/257)})
 		}
 	}
-	return *newImage
+	return newImage
 }
 
 
-func Grayscale(dec image.Image,width float64,height float64) *image.Gray {
+func Grayscale(dec image.Image,width float64,height float64) image.Image {
 	newImage := image.NewGray(image.Rect(0,0,int(width),int(height)))
 	sourceWidth := float64(dec.Bounds().Size().X)
 	sourceHeight := float64(dec.Bounds().Size().Y)

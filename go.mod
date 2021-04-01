@@ -1,3 +1,3 @@
-module github.com/image-resizer
+module image-resizer
 
 go 1.16
