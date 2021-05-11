@@ -41,10 +41,10 @@ func main() {
 		Password: "",
 		DB:       0,
 	})
-
+	fmt.Println("starting image resizing")	
 	http.HandleFunc("/", handleRequest)
 	http.HandleFunc("/favicon.ico", handleFavicon)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":5001", nil))
 
 }
 
@@ -53,7 +53,8 @@ func handleFavicon(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
+       fmt.Println("request incoming")
+        query := r.URL.Query()
 	urlStr, width, height, filter := query.Get("url"), query.Get("width"), query.Get("height"), query.Get("filter")
 
 	if urlStr == "" {
