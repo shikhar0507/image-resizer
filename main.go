@@ -28,6 +28,7 @@ type Properties struct {
 	imageUrl string
 	width, height float64
 	filter        string
+	value int
 	//ext Extension
 }
 
@@ -55,7 +56,8 @@ func handleFavicon(w http.ResponseWriter, r *http.Request) {
 func handleRequest(w http.ResponseWriter, r *http.Request) {
        fmt.Println("request incoming")
         query := r.URL.Query()
-	urlStr, width, height, filter := query.Get("url"), query.Get("width"), query.Get("height"), query.Get("filter")
+	urlStr, width, height, filter,value := query.Get("url"), query.Get("width"), query.Get("height"), query.Get("filter"), query.Get("value")
+	
 
 	if urlStr == "" {
 		http.Error(w, "url is not provided", http.StatusBadRequest)
@@ -64,7 +66,8 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	wd, werr := strconv.Atoi(width)
 	hg, herr := strconv.Atoi(height)
-
+	var intVal int
+	
 	if width == "" && height != "" {
 		http.Error(w, "error parsing the width", http.StatusInternalServerError)
 		return
@@ -91,10 +94,19 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	if hg <= 0 {
 		http.Error(w, "height cannot be less than or equal to 0", http.StatusBadRequest)
 		return
+		
+	}
+	if value != "" {
+	   val,convErr := strconv.Atoi(value)
+	   if convErr != nil {
+	      intVal = 0
+	   }else {intVal = val}
+	   
 	}
 	//parsedUrl,err :=  url.Parse(urlStr)
-
-	property = Properties{url: r.URL, width: float64(wd), height: float64(hg), filter: filter,imageUrl: urlStr}
+	fmt.Println(intVal)
+	property = Properties{url: r.URL, width: float64(wd), height: float64(hg), filter: filter,imageUrl: urlStr,value: intVal}
+	
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "max-age=100")
 
@@ -226,14 +238,17 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 	case "grayscale":
 		modifiedImage = filters.Grayscale(baseImage, sourceWidth, sourceHeight)
 	case "brightness":
-		bo := filters.BrightnessOptions{Factor: 150}
+		
+		bo := filters.BrightnessOptions{Factor: float64(prop.value)}
 		modifiedImage = filters.BrightnessAdjust(baseImage, sourceWidth, sourceHeight, bo)
 	case "blur":
-		bo := filters.BlurOptions{Radius: 3}
+		bo := filters.BlurOptions{Radius: prop.value}
 		modifiedImage = filters.Blur(baseImage, sourceWidth, sourceHeight, bo)
 	default:
 		modifiedImage = baseImage
 	}
+
+	
 
 	return modifiedImage, nil
 
