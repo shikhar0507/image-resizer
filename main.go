@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"image"
 	"image-resizer/filters"
 	"image/color"
@@ -21,14 +20,16 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/go-redis/redis/v8"
 )
 
 type Properties struct {
 	url           *url.URL
-	imageUrl string
+	imageUrl      string
 	width, height float64
 	filter        string
-	value int
+	value         int
 	//ext Extension
 }
 
@@ -42,7 +43,7 @@ func main() {
 		Password: "",
 		DB:       0,
 	})
-	fmt.Println("starting image resizing")	
+	fmt.Println("starting image resizing")
 	http.HandleFunc("/", handleRequest)
 	http.HandleFunc("/favicon.ico", handleFavicon)
 	log.Fatal(http.ListenAndServe(":5001", nil))
@@ -54,10 +55,10 @@ func handleFavicon(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
-       fmt.Println("request incoming")
-        query := r.URL.Query()
-	urlStr, width, height, filter,value := query.Get("url"), query.Get("width"), query.Get("height"), query.Get("filter"), query.Get("value")
-	
+
+	fmt.Println("request incoming")
+	query := r.URL.Query()
+	urlStr, width, height, filter, value := query.Get("url"), query.Get("width"), query.Get("height"), query.Get("filter"), query.Get("value")
 
 	if urlStr == "" {
 		http.Error(w, "url is not provided", http.StatusBadRequest)
@@ -67,7 +68,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	wd, werr := strconv.Atoi(width)
 	hg, herr := strconv.Atoi(height)
 	var intVal int
-	
+
 	if width == "" && height != "" {
 		http.Error(w, "error parsing the width", http.StatusInternalServerError)
 		return
@@ -94,19 +95,21 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	if hg <= 0 {
 		http.Error(w, "height cannot be less than or equal to 0", http.StatusBadRequest)
 		return
-		
+
 	}
 	if value != "" {
-	   val,convErr := strconv.Atoi(value)
-	   if convErr != nil {
-	      intVal = 0
-	   }else {intVal = val}
-	   
+		val, convErr := strconv.Atoi(value)
+		if convErr != nil {
+			intVal = 0
+		} else {
+			intVal = val
+		}
+
 	}
 	//parsedUrl,err :=  url.Parse(urlStr)
 	fmt.Println(intVal)
-	property = Properties{url: r.URL, width: float64(wd), height: float64(hg), filter: filter,imageUrl: urlStr,value: intVal}
-	
+	property = Properties{url: r.URL, width: float64(wd), height: float64(hg), filter: filter, imageUrl: urlStr, value: intVal}
+
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "max-age=100")
 
@@ -126,6 +129,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		buffer := new(bytes.Buffer)
 		fmt.Println("encoding image")
+
 		encodeErr := jpeg.Encode(buffer, img, &jpeg.Options{Quality: 100})
 		if encodeErr != nil {
 			http.Error(w, "error", http.StatusInternalServerError)
@@ -174,7 +178,7 @@ func getImage(imageUrl string) (io.Reader, error) {
 		fmt.Println("sending image")
 
 		//buff := new(bytes.Buffer)
-		return bytes.NewReader(dat) , nil
+		return bytes.NewReader(dat), nil
 	}
 	if err != nil {
 		fmt.Println("reading err", err)
@@ -185,7 +189,7 @@ func getImage(imageUrl string) (io.Reader, error) {
 	////json.Unmarshal([]byte(savedImageResponse),ma)
 	//fmt.Println(ma)
 	//fmt.Println(savedImageResponse)
-	return bytes.NewReader([]byte(savedImageResponse)) , nil
+	return bytes.NewReader([]byte(savedImageResponse)), nil
 	//return bytes.NewReader([]byte(ma)), nil
 }
 
@@ -238,17 +242,18 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 	case "grayscale":
 		modifiedImage = filters.Grayscale(baseImage, sourceWidth, sourceHeight)
 	case "brightness":
-		
+
 		bo := filters.BrightnessOptions{Factor: float64(prop.value)}
 		modifiedImage = filters.BrightnessAdjust(baseImage, sourceWidth, sourceHeight, bo)
 	case "blur":
 		bo := filters.BlurOptions{Radius: prop.value}
 		modifiedImage = filters.Blur(baseImage, sourceWidth, sourceHeight, bo)
+	case "color":
+		modifiedImage = filters.Color(baseImage, sourceWidth, sourceHeight)
+
 	default:
 		modifiedImage = baseImage
 	}
-
-	
 
 	return modifiedImage, nil
 
