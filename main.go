@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"errors"
 	"fmt"
 	"image"
 	"image-resizer/filters"
@@ -19,9 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
-
-	"github.com/go-redis/redis/v8"
 )
 
 type Properties struct {
@@ -33,20 +28,31 @@ type Properties struct {
 	//ext Extension
 }
 
+type ChanStr struct {
+	img image.Image
+	w   http.ResponseWriter
+}
+
 var property Properties
 var ctx = context.Background()
-var rdb *redis.Client
 
 func main() {
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
+
 	fmt.Println("starting image resizing")
+
 	http.HandleFunc("/", handleRequest)
 	http.HandleFunc("/favicon.ico", handleFavicon)
 	log.Fatal(http.ListenAndServe(":5001", nil))
+	//img := <-ch
+	//close(ch)
+
+	/*
+		if err != nil {
+			fmt.Println(err)
+			http.Error(w, "error", http.StatusBadRequest)
+			return
+		}
+	*/
 
 }
 
@@ -111,107 +117,69 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	property = Properties{url: r.URL, width: float64(wd), height: float64(hg), filter: filter, imageUrl: urlStr, value: intVal}
 
 	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "max-age=100")
+	w.Header().Set("Cache-Control", "max-age=3600")
+	//	ch := make(chan image.Image)
 
-	imageHash := sha256.Sum256([]byte(r.URL.RawQuery))
+	var ch chan ChanStr = make(chan ChanStr)
 
-	savedImage, err := rdb.Get(ctx, fmt.Sprintf("%x", imageHash)).Result()
-	if err == redis.Nil {
-		img, err := loadImageFromUrl(property)
-		if err != nil {
-			fmt.Println(err)
-			http.Error(w, "error", http.StatusBadRequest)
-			return
-		}
-		if img == nil {
-			log.Fatal(img)
+	go loadImageFromUrl(property, w, ch)
+	for result := range ch {
+		if result.img == nil {
+			log.Fatal(result.img)
 			return
 		}
 		buffer := new(bytes.Buffer)
 		fmt.Println("encoding image")
 
-		encodeErr := jpeg.Encode(buffer, img, &jpeg.Options{Quality: 100})
+		encodeErr := jpeg.Encode(buffer, result.img, &jpeg.Options{Quality: 100})
+
+		//encodeErr := jpeg.Encode(buffer, img, &jpeg.Options{Quality: 100})
 		if encodeErr != nil {
-			http.Error(w, "error", http.StatusInternalServerError)
+			http.Error(result.w, "error", http.StatusInternalServerError)
 			return
 		}
 
-		rdb.Set(ctx, fmt.Sprintf("%x", imageHash), buffer.Bytes(), 20*time.Second)
-		_, writeErr := w.Write(buffer.Bytes())
+		_, writeErr := result.w.Write(buffer.Bytes())
 		if writeErr != nil {
-			http.Error(w, "error", http.StatusInternalServerError)
+			log.Println(writeErr)
 			return
 		}
-	} else if err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println("image from redis found")
-		w.Write([]byte(savedImage))
 	}
+
+	//close(ch)
 }
 
 func getImage(imageUrl string) (io.Reader, error) {
-	key := fmt.Sprintf("%x", sha256.Sum256([]byte(imageUrl)))
-	savedImageResponse, err := rdb.Get(ctx, key).Result()
-	if err == redis.Nil {
-		fmt.Println("image not found in redis with key", key)
-		fmt.Println("downloading image", imageUrl)
-		resp, err := http.Get(imageUrl)
-		if err != nil {
-			fmt.Println("error loading image", err)
-			return nil, err
-		}
-		//defer resp.Body.Close()
-
-		respBody := resp.Body
-		fmt.Println("storing image in redis with key", key)
-		//r := bufio.NewReader(respBody)
-		dat, err := ioutil.ReadAll(respBody)
-
-		//m, err := json.Marshal(respBody)
-		//fmt.Println("marshalled length",)
-		s, e := rdb.Set(ctx, key, dat, 20*time.Second).Result()
-		if e != nil {
-			fmt.Println(e)
-		}
-		fmt.Println(s)
-		fmt.Println("sending image")
-
-		//buff := new(bytes.Buffer)
-		return bytes.NewReader(dat), nil
-	}
+	resp, err := http.Get(imageUrl)
 	if err != nil {
-		fmt.Println("reading err", err)
+		fmt.Println("error loading image", err)
 		return nil, err
 	}
-	fmt.Println("sending saved imaged")
-	//var ma map[string]string
-	////json.Unmarshal([]byte(savedImageResponse),ma)
-	//fmt.Println(ma)
-	//fmt.Println(savedImageResponse)
-	return bytes.NewReader([]byte(savedImageResponse)), nil
-	//return bytes.NewReader([]byte(ma)), nil
+	respBody := resp.Body
+	dat, err := ioutil.ReadAll(respBody)
+	return bytes.NewReader(dat), nil
+
 }
 
-func loadImageFromUrl(prop Properties) (image.Image, error) {
+func loadImageFromUrl(prop Properties, w http.ResponseWriter, ch chan ChanStr) {
 
 	respBody, err := getImage(prop.imageUrl)
 	if err != nil {
-		fmt.Println(err)
-		return nil, err
+		ch <- ChanStr{}
+		return
 	}
 	decodedImage, _, err := image.Decode(respBody)
 
 	//fmt.Println("type",imageType)
 
 	if err != nil {
-		fmt.Println("decode err", err)
-		return nil, err
+		ch <- ChanStr{}
+		return
 	}
 	fmt.Println("decoded image")
 	if decodedImage == nil {
-		fmt.Println("null image")
-		return nil, errors.New("null image")
+		ch <- ChanStr{}
+		return
 	}
 
 	imageBound := decodedImage.Bounds().Size()
@@ -255,8 +223,8 @@ func loadImageFromUrl(prop Properties) (image.Image, error) {
 		modifiedImage = baseImage
 	}
 
-	return modifiedImage, nil
-
+	ch <- ChanStr{img: modifiedImage, w: w}
+	close(ch)
 }
 
 func resize(dec image.Image, width float64, height float64, sourceWidth float64, sourceHeight float64) image.Image {
@@ -271,6 +239,7 @@ func resize(dec image.Image, width float64, height float64, sourceWidth float64,
 			newImage.SetRGBA(int(i), int(j), color.RGBA{R: uintR, G: uintG, B: uintB, A: uintA})
 		}
 	}
+
 	return newImage
 
 }
