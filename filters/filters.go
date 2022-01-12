@@ -23,17 +23,14 @@ func Color(dec image.Image, width, height float64) image.Image {
 		for j := 0; j < int(height); j++ {
 			code, _, _, _ := bw.At(i, j).RGBA()
 			y := uint8(code / 257)
-			if y > 0 {
-				newImage.Set(i, j, color.RGBA{R: 137, G: 208, B: 240})
+			if y == 255 {
+				newImage.Set(i, j, color.RGBA{R: 0, G: 0, B: 255})
 			} else {
-				//	r, g, b, _ := dec.At(i, j).RGBA()
-				newImage.Set(i, j, color.RGBA{R: 255, G: 0, B: 0})
+				//newImage.Set(i, j, color.RGBA{R: 0, G: 0, B: 255})
 			}
 		}
 	}
-	bo := BlurOptions{Radius: 3}
-	return Blur(newImage, width, height, bo)
-	//return newImage
+	return newImage
 
 }
 
@@ -74,6 +71,7 @@ func BlackAndWhite(dec image.Image, width float64, height float64) image.Image {
 				uintGray = 255
 			} else {
 				uintGray = 0
+
 			}
 			newImage.SetGray(x, y, color.Gray{Y: uintGray})
 		}

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image-resizer/filters"
@@ -11,12 +13,14 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
-	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
 type Properties struct {
@@ -37,70 +41,63 @@ var property Properties
 var ctx = context.Background()
 
 func main() {
+	lambda.Start(HandleRequest)
+}
 
-	fmt.Println("starting image resizing")
+func HandleRequest(ctx context.Context, evt events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 
-	http.HandleFunc("/", handleRequest)
-	http.HandleFunc("/favicon.ico", handleFavicon)
-	log.Fatal(http.ListenAndServe(":5001", nil))
-	//img := <-ch
-	//close(ch)
+	head := map[string]string{
+		"Content-Type":  "image/jpeg",
+		"Cache-Control": "max-age=63072000",
+		"Accept-Ranges": "bytes",
+	}
 
-	/*
-		if err != nil {
-			fmt.Println(err)
-			http.Error(w, "error", http.StatusBadRequest)
-			return
+	req, err := handleRequest(evt)
+	if err != nil {
+
+		return events.APIGatewayProxyResponse{Headers: head, StatusCode: 500, Body: err.Error()}, err
+	}
+
+	return events.APIGatewayProxyResponse{Body: req, StatusCode: 200, Headers: head, IsBase64Encoded: true}, nil
+}
+
+func handleRequest(evt events.APIGatewayProxyRequest) (string, error) {
+	var urlStr, width, height, filter, value string
+	for k, v := range evt.QueryStringParameters {
+		switch k {
+		case "url":
+			urlStr = v
+		case "width":
+			width = v
+		case "height":
+			height = v
+		case "filter":
+			filter = v
+		case "value":
+			value = v
 		}
-	*/
 
-}
-
-func handleFavicon(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func handleRequest(w http.ResponseWriter, r *http.Request) {
-
-	fmt.Println("request incoming")
-	query := r.URL.Query()
-	urlStr, width, height, filter, value := query.Get("url"), query.Get("width"), query.Get("height"), query.Get("filter"), query.Get("value")
-
-	if urlStr == "" {
-		http.Error(w, "url is not provided", http.StatusBadRequest)
-		return
 	}
 
 	wd, werr := strconv.Atoi(width)
 	hg, herr := strconv.Atoi(height)
 	var intVal int
 
-	if width == "" && height != "" {
-		http.Error(w, "error parsing the width", http.StatusInternalServerError)
-		return
-	}
-	if height == "" && width != "" {
-		http.Error(w, "error parsing the height", http.StatusInternalServerError)
-		return
+	if werr != nil {
+		return "", errors.New("error parsing the width")
+
 	}
 
-	if width != "" && werr != nil {
-		http.Error(w, "error parsing the width", http.StatusInternalServerError)
-		return
-	}
-
-	if height != "" && herr != nil {
-		http.Error(w, "error parsing the height", http.StatusInternalServerError)
-		return
+	if herr != nil {
+		return "", errors.New("error parsing the height")
 	}
 
 	if wd <= 0 {
-		http.Error(w, "width cannot be less than or equal to 0", http.StatusBadRequest)
-		return
+		return "", errors.New("width cannot be less than or equal to 0")
+
 	}
 	if hg <= 0 {
-		http.Error(w, "height cannot be less than or equal to 0", http.StatusBadRequest)
-		return
+		return "", errors.New("height cannot be less than or equal to 0")
 
 	}
 	if value != "" {
@@ -112,72 +109,61 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 
 	}
-	//parsedUrl,err :=  url.Parse(urlStr)
-	fmt.Println(intVal)
-	property = Properties{url: r.URL, width: float64(wd), height: float64(hg), filter: filter, imageUrl: urlStr, value: intVal}
 
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "max-age=3600")
-	//	ch := make(chan image.Image)
+	fmt.Println(intVal)
+	ogUrl, _ := url.Parse(urlStr)
+	property = Properties{url: ogUrl, width: float64(wd), height: float64(hg), filter: filter, imageUrl: urlStr, value: intVal}
 
 	var ch chan ChanStr = make(chan ChanStr)
 
-	go loadImageFromUrl(property, w, ch)
-	for result := range ch {
-		if result.img == nil {
-			log.Fatal(result.img)
-			return
-		}
-		buffer := new(bytes.Buffer)
-		fmt.Println("encoding image")
+	go loadImageFromUrl(property, ch)
+	result := <-ch
 
-		encodeErr := jpeg.Encode(buffer, result.img, &jpeg.Options{Quality: 100})
+	if result.img == nil {
+		return "", errors.New("image not found")
+	}
+	buffer := new(bytes.Buffer)
 
-		//encodeErr := jpeg.Encode(buffer, img, &jpeg.Options{Quality: 100})
-		if encodeErr != nil {
-			http.Error(result.w, "error", http.StatusInternalServerError)
-			return
-		}
+	encodeErr := jpeg.Encode(buffer, result.img, &jpeg.Options{Quality: 100})
+	if encodeErr != nil {
+		return "", encodeErr
 
-		_, writeErr := result.w.Write(buffer.Bytes())
-		if writeErr != nil {
-			log.Println(writeErr)
-			return
-		}
 	}
 
-	//close(ch)
+	return base64.StdEncoding.EncodeToString([]byte(buffer.Bytes())), nil
 }
 
 func getImage(imageUrl string) (io.Reader, error) {
 	resp, err := http.Get(imageUrl)
 	if err != nil {
-		fmt.Println("error loading image", err)
+		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		return nil, err
 	}
-	respBody := resp.Body
-	dat, err := ioutil.ReadAll(respBody)
-	return bytes.NewReader(dat), nil
+	//defer resp.Body.Close()
+	return resp.Body, nil
 
 }
 
-func loadImageFromUrl(prop Properties, w http.ResponseWriter, ch chan ChanStr) {
+func loadImageFromUrl(prop Properties, ch chan ChanStr) {
 
 	respBody, err := getImage(prop.imageUrl)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		ch <- ChanStr{}
 		return
 	}
-	decodedImage, _, err := image.Decode(respBody)
+	decodedImage, err := jpeg.Decode(respBody)
 
 	//fmt.Println("type",imageType)
 
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		ch <- ChanStr{}
 		return
 	}
 	fmt.Println("decoded image")
 	if decodedImage == nil {
+		fmt.Fprintf(os.Stderr, "%s", "decoded image is nil")
 		ch <- ChanStr{}
 		return
 	}
@@ -223,7 +209,7 @@ func loadImageFromUrl(prop Properties, w http.ResponseWriter, ch chan ChanStr) {
 		modifiedImage = baseImage
 	}
 
-	ch <- ChanStr{img: modifiedImage, w: w}
+	ch <- ChanStr{img: modifiedImage}
 	close(ch)
 }
 
