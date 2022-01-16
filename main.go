@@ -13,14 +13,21 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 type Properties struct {
@@ -32,13 +39,17 @@ type Properties struct {
 	//ext Extension
 }
 
-type ChanStr struct {
-	img image.Image
-	w   http.ResponseWriter
+type responseHeaders struct {
+	expires      string
+	etag         string
+	cacheControl string
+	contentType  string
+	lastModified time.Time
 }
 
 var property Properties
 var ctx = context.Background()
+var respHeader responseHeaders
 
 func main() {
 	lambda.Start(HandleRequest)
@@ -51,14 +62,20 @@ func HandleRequest(ctx context.Context, evt events.APIGatewayProxyRequest) (even
 		"Cache-Control": "max-age=63072000",
 		"Accept-Ranges": "bytes",
 	}
+	heads := map[string]string{
+		"Content-Type":  respHeader.contentType,
+		"Cache-Control": respHeader.cacheControl,
+		"ETag":          respHeader.etag,
+		"Last-Modified": respHeader.lastModified.Local().String(),
+	}
 
 	req, err := handleRequest(evt)
 	if err != nil {
 
 		return events.APIGatewayProxyResponse{Headers: head, StatusCode: 500, Body: err.Error()}, err
 	}
-
-	return events.APIGatewayProxyResponse{Body: req, StatusCode: 200, Headers: head, IsBase64Encoded: true}, nil
+	fmt.Println("sending these headers", heads)
+	return events.APIGatewayProxyResponse{Body: req, StatusCode: 200, Headers: heads, IsBase64Encoded: true}, nil
 }
 
 func handleRequest(evt events.APIGatewayProxyRequest) (string, error) {
@@ -110,27 +127,120 @@ func handleRequest(evt events.APIGatewayProxyRequest) (string, error) {
 
 	}
 
-	fmt.Println(intVal)
 	ogUrl, _ := url.Parse(urlStr)
 	property = Properties{url: ogUrl, width: float64(wd), height: float64(hg), filter: filter, imageUrl: urlStr, value: intVal}
 
-	var ch chan ChanStr = make(chan ChanStr)
+	sess, err := session.NewSession(&aws.Config{Region: aws.String("us-east-2")})
 
-	go loadImageFromUrl(property, ch)
-	result := <-ch
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "init error %s", err)
+		return "", err
+	}
 
-	if result.img == nil {
+	svc := s3.New(sess)
+	input := &s3.HeadObjectInput{Bucket: aws.String("imageresizerbaseimages"), Key: aws.String(path.Base(urlStr))}
+	_, err = svc.HeadObject(input)
+	var resultImg image.Image
+
+	if err == nil {
+
+		img, imgErr := loadImageFromS3(svc, property)
+		if imgErr != nil {
+			fmt.Println("image found but error", imgErr)
+			img, finalErr := loadImageFromUrl(property, sess)
+			if finalErr != nil {
+				return "", finalErr
+			}
+			resultImg = img
+		} else {
+			resultImg = img
+		}
+	} else {
+		fmt.Println("image not found")
+		img, imgErr := loadImageFromUrl(property, sess)
+		if imgErr != nil {
+			return "", imgErr
+		}
+		resultImg = img
+	}
+
+	if resultImg == nil {
 		return "", errors.New("image not found")
 	}
+
 	buffer := new(bytes.Buffer)
 
-	encodeErr := jpeg.Encode(buffer, result.img, &jpeg.Options{Quality: 100})
+	encodeErr := jpeg.Encode(buffer, resultImg, &jpeg.Options{Quality: 100})
 	if encodeErr != nil {
 		return "", encodeErr
 
 	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(buffer.Bytes()))
 
-	return base64.StdEncoding.EncodeToString([]byte(buffer.Bytes())), nil
+	return encoded, nil
+}
+
+func loadImageFromS3(svc *s3.S3, prop Properties) (image.Image, error) {
+
+	fmt.Println("getting image", path.Base(prop.imageUrl))
+	ot, err := svc.GetObject(&s3.GetObjectInput{Bucket: aws.String("imageresizerbaseimages"), Key: aws.String(path.Base(prop.imageUrl))})
+
+	if err != nil {
+		fmt.Println("ot error", err.Error())
+		return nil, err
+	}
+	respHeader.cacheControl = *ot.CacheControl
+	respHeader.etag = *ot.ETag
+	respHeader.contentType = *ot.ContentType
+	respHeader.lastModified = *ot.LastModified
+
+	fmt.Println(respHeader)
+	defer ot.Body.Close()
+	img, err := jpeg.Decode(ot.Body)
+	if err != nil {
+		fmt.Println("error decoding from s3", err.Error())
+		return nil, err
+	}
+	return transformImage(img, prop)
+}
+
+func loadImageFromUrl(prop Properties, sess *session.Session) (image.Image, error) {
+
+	respBody, err := getImage(prop.imageUrl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s", err.Error())
+		return nil, err
+	}
+
+	saveToS3(respBody, path.Base(prop.url.String()), sess)
+	decodedImage, err := jpeg.Decode(respBody)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s", err.Error())
+		return nil, err
+	}
+	fmt.Println("decoded image")
+	if decodedImage == nil {
+		fmt.Fprintf(os.Stderr, "%s", "decoded image is nil")
+		return nil, errors.New("decoded image is nill")
+	}
+
+	respHeader.cacheControl = "max-age:3600"
+	respHeader.contentType = "image/jpeg"
+	return transformImage(decodedImage, prop)
+}
+
+func saveToS3(data io.Reader, filename string, sess *session.Session) {
+	log.Println("uploading image to s3")
+
+	uploader := s3manager.NewUploader(sess)
+	result, err := uploader.Upload(&s3manager.UploadInput{Bucket: aws.String("imageresizerbaseimages"), Key: aws.String(filename), ContentType: aws.String("image/jpeg"), Body: data, CacheControl: aws.String("max-age=63072000")})
+
+	if err != nil {
+		fmt.Println("upload err", err.Error())
+		return
+	}
+	log.Println("uploaded to", result.Location)
 }
 
 func getImage(imageUrl string) (io.Reader, error) {
@@ -139,35 +249,12 @@ func getImage(imageUrl string) (io.Reader, error) {
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		return nil, err
 	}
-	//defer resp.Body.Close()
+
 	return resp.Body, nil
 
 }
 
-func loadImageFromUrl(prop Properties, ch chan ChanStr) {
-
-	respBody, err := getImage(prop.imageUrl)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err.Error())
-		ch <- ChanStr{}
-		return
-	}
-	decodedImage, err := jpeg.Decode(respBody)
-
-	//fmt.Println("type",imageType)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err.Error())
-		ch <- ChanStr{}
-		return
-	}
-	fmt.Println("decoded image")
-	if decodedImage == nil {
-		fmt.Fprintf(os.Stderr, "%s", "decoded image is nil")
-		ch <- ChanStr{}
-		return
-	}
-
+func transformImage(decodedImage image.Image, prop Properties) (image.Image, error) {
 	imageBound := decodedImage.Bounds().Size()
 	sourceWidth := float64(imageBound.X)
 	if prop.width != 0 {
@@ -209,8 +296,7 @@ func loadImageFromUrl(prop Properties, ch chan ChanStr) {
 		modifiedImage = baseImage
 	}
 
-	ch <- ChanStr{img: modifiedImage}
-	close(ch)
+	return modifiedImage, nil
 }
 
 func resize(dec image.Image, width float64, height float64, sourceWidth float64, sourceHeight float64) image.Image {
