@@ -196,7 +196,7 @@ func loadImageFromS3(svc *s3.S3, prop Properties) (image.Image, error) {
 
 	fmt.Println(respHeader)
 	defer ot.Body.Close()
-	img, err := jpeg.Decode(ot.Body)
+	img, _, err := image.Decode(ot.Body)
 	if err != nil {
 		fmt.Println("error decoding from s3", err.Error())
 		return nil, err
@@ -211,14 +211,17 @@ func loadImageFromUrl(prop Properties, sess *session.Session) (image.Image, erro
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		return nil, err
 	}
+	decodedImage, meta, err := image.Decode(respBody)
+	fmt.Println(meta)
 
-	saveToS3(respBody, path.Base(prop.url.String()), sess)
-	decodedImage, err := jpeg.Decode(respBody)
+	//decodedImage, err := jpeg.Decode(respBody)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		return nil, err
 	}
+	saveToS3(respBody, path.Base(prop.url.String()), sess)
+
 	fmt.Println("decoded image")
 	if decodedImage == nil {
 		fmt.Fprintf(os.Stderr, "%s", "decoded image is nil")
@@ -289,9 +292,10 @@ func transformImage(decodedImage image.Image, prop Properties) (image.Image, err
 	case "blur":
 		bo := filters.BlurOptions{Radius: prop.value}
 		modifiedImage = filters.Blur(baseImage, sourceWidth, sourceHeight, bo)
-	case "color":
-		modifiedImage = filters.Color(baseImage, sourceWidth, sourceHeight)
-
+	case "negative":
+		modifiedImage = filters.Negative(baseImage, sourceWidth, sourceHeight)
+	case "postive":
+		modifiedImage = filters.Postive(baseImage, sourceWidth, sourceHeight)
 	default:
 		modifiedImage = baseImage
 	}

@@ -16,24 +16,6 @@ type BlurOptions struct {
 	Radius int
 }
 
-func Color(dec image.Image, width, height float64) image.Image {
-	bw := BlackAndWhite(dec, width, height)
-	newImage := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
-	for i := 0; i <= int(width); i++ {
-		for j := 0; j < int(height); j++ {
-			code, _, _, _ := bw.At(i, j).RGBA()
-			y := uint8(code / 257)
-			if y == 255 {
-				newImage.Set(i, j, color.RGBA{R: 0, G: 0, B: 255})
-			} else {
-				//newImage.Set(i, j, color.RGBA{R: 0, G: 0, B: 255})
-			}
-		}
-	}
-	return newImage
-
-}
-
 func BrightnessAdjust(dec image.Image, width float64, height float64, bo BrightnessOptions) image.Image {
 	newImage := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
 
@@ -181,6 +163,30 @@ func Grayscale(dec image.Image, width float64, height float64) image.Image {
 			//fmt.Println(R,G,B)
 			//uintR ,uintG,uintb := uint8(r/257),uint8(g/257),uint8(b/257)
 			newImage.SetGray(int(i), int(j), color.Gray{Y: tot})
+		}
+	}
+	return newImage
+}
+
+func Negative(dec image.Image, width float64, height float64) image.Image {
+	newImage := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
+	for x := 0; x < int(width); x++ {
+		for y := 0; y < int(height); y++ {
+			r, g, b, _ := dec.At(x, y).RGBA()
+			newR, newG, newB := 255-getAdjustedPixel(r, 0, 1), 255-getAdjustedPixel(g, 0, 1), 255-getAdjustedPixel(b, 0, 1)
+			newImage.SetRGBA(x, y, color.RGBA{R: newR, G: newG, B: newB})
+		}
+	}
+	return newImage
+}
+
+func Postive(dec image.Image, width float64, height float64) image.Image {
+	newImage := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
+	for x := 0; x < int(width); x++ {
+		for y := 0; y < int(height); y++ {
+			r, g, b, _ := dec.At(x, y).RGBA()
+			newR, newG, newB := 255-getAdjustedPixel(r, 0, 1), 255-getAdjustedPixel(g, 0, 1), 255-getAdjustedPixel(b, 0, 1)
+			newImage.SetRGBA(x, y, color.RGBA{R: newR, G: newG, B: newB})
 		}
 	}
 	return newImage

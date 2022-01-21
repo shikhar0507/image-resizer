@@ -1,0 +1,53 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"strings"
+
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+)
+
+type PaylodReq struct {
+	Body string `json:"Body"`
+}
+type Body struct {
+	FileData string
+	Filename string
+}
+
+func main() {
+	lambda.Start(handler)
+}
+
+func handler(ctx context.Context, ev PaylodReq) {
+	fmt.Println(ev.Body)
+	var b Body
+	err := json.Unmarshal([]byte(ev.Body), &b)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(b)
+	sess, err := session.NewSession(&aws.Config{Region: aws.String("us-east-2")})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	uploader := s3manager.NewUploader(sess)
+	
+	result, err := uploader.Upload(&s3manager.UploadInput{Bucket: aws.String("imageresizerbaseimages"), Key: aws.String(b.Filename), ContentType: aws.String("image/jpeg"), Body: strings.NewReader(fmt.Sprintf("data:image/jpeg;base64,%s", b.FileData)), CacheControl: aws.String("max-age=63072000")})
+
+	if err != nil {
+		fmt.Println("upload err", err.Error())
+		return
+	}
+	log.Println("uploaded to", result.Location)
+
+}
