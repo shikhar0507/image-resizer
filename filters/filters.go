@@ -96,7 +96,7 @@ func Sepia(dec image.Image, width, height float64) image.Image {
 		for y := 0; y < int(height); y++ {
 			r, g, b, _ := dec.At(x, y).RGBA()
 
-			r8, g8, b8 := float64(uint8(r)), float64(uint8(g)), float64(uint8(b))
+			r8, g8, b8 := float64(uint8(r/257)), float64(uint8(g/257)), float64(uint8(b/257))
 
 			nr := r8*0.393 + g8*0.769 + b8*0.189
 			if nr > 255 {

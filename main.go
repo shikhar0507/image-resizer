@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	_ "image/jpeg"
+	"image/png"
 	_ "image/png"
 	"io"
 	"log"
@@ -28,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/chai2010/webp"
 )
 
 type Properties struct {
@@ -36,6 +38,7 @@ type Properties struct {
 	width, height float64
 	filter        string
 	value         int
+	contentType   string
 	//ext Extension
 }
 
@@ -47,7 +50,7 @@ type responseHeaders struct {
 	lastModified time.Time
 }
 
-var property Properties
+var property *Properties
 var ctx = context.Background()
 var respHeader responseHeaders
 
@@ -128,7 +131,7 @@ func handleRequest(evt events.APIGatewayProxyRequest) (string, error) {
 	}
 
 	ogUrl, _ := url.Parse(urlStr)
-	property = Properties{url: ogUrl, width: float64(wd), height: float64(hg), filter: filter, imageUrl: urlStr, value: intVal}
+	property = &Properties{url: ogUrl, width: float64(wd), height: float64(hg), filter: filter, imageUrl: urlStr, value: intVal}
 
 	sess, err := session.NewSession(&aws.Config{Region: aws.String("us-east-2")})
 
@@ -169,8 +172,18 @@ func handleRequest(evt events.APIGatewayProxyRequest) (string, error) {
 	}
 
 	buffer := new(bytes.Buffer)
+	var encodeErr error
+	fmt.Println("encoding image as", property.contentType)
+	switch property.contentType {
+	case "image/webp", "webp":
+		encodeErr = webp.Encode(buffer, resultImg, &webp.Options{Quality: 100, Exact: true, Lossless: true})
+	case "png", "image/png":
+		encodeErr = png.Encode(buffer, resultImg)
+	default:
+		encodeErr = jpeg.Encode(buffer, resultImg, &jpeg.Options{Quality: 100})
 
-	encodeErr := jpeg.Encode(buffer, resultImg, &jpeg.Options{Quality: 100})
+	}
+
 	if encodeErr != nil {
 		return "", encodeErr
 
@@ -180,7 +193,7 @@ func handleRequest(evt events.APIGatewayProxyRequest) (string, error) {
 	return encoded, nil
 }
 
-func loadImageFromS3(svc *s3.S3, prop Properties) (image.Image, error) {
+func loadImageFromS3(svc *s3.S3, prop *Properties) (image.Image, error) {
 
 	fmt.Println("getting image", path.Base(prop.imageUrl))
 	ot, err := svc.GetObject(&s3.GetObjectInput{Bucket: aws.String("imageresizerbaseimages"), Key: aws.String(path.Base(prop.imageUrl))})
@@ -193,34 +206,56 @@ func loadImageFromS3(svc *s3.S3, prop Properties) (image.Image, error) {
 	respHeader.etag = *ot.ETag
 	respHeader.contentType = *ot.ContentType
 	respHeader.lastModified = *ot.LastModified
-
-	fmt.Println(respHeader)
+	prop.contentType = *ot.ContentType
+	var decodedImage image.Image
+	var decodeErr error
 	defer ot.Body.Close()
-	img, _, err := image.Decode(ot.Body)
-	if err != nil {
-		fmt.Println("error decoding from s3", err.Error())
-		return nil, err
+
+	if *ot.ContentType == "image/webp" {
+		decodedImage, decodeErr = webp.Decode(ot.Body)
+	} else {
+		decodedImage, prop.contentType, decodeErr = image.Decode(ot.Body)
 	}
-	return transformImage(img, prop)
+
+	if decodeErr != nil {
+		fmt.Fprintf(os.Stderr, "%s", decodeErr.Error())
+		return nil, decodeErr
+	}
+	return transformImage(decodedImage, prop)
 }
 
-func loadImageFromUrl(prop Properties, sess *session.Session) (image.Image, error) {
+func loadImageFromUrl(prop *Properties, sess *session.Session) (image.Image, error) {
 
-	respBody, err := getImage(prop.imageUrl)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s", err.Error())
-		return nil, err
-	}
-	decodedImage, meta, err := image.Decode(respBody)
-	fmt.Println(meta)
-
-	//decodedImage, err := jpeg.Decode(respBody)
+	respBody, imageType, err := getImage(prop.imageUrl)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
 		return nil, err
 	}
-	saveToS3(respBody, path.Base(prop.url.String()), sess)
+
+	var decodedImage image.Image
+	var decodeErr error
+	defer respBody.Close()
+	decodedImage, imageType, decodeErr = image.Decode(respBody)
+	if decodeErr != nil {
+		decodedImage, decodeErr = webp.Decode(respBody)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+	}
+	/*
+		if imageType == "image/webp" {
+			decodedImage, decodeErr = webp.Decode(respBody)
+		} else {
+
+		}
+
+		if decodeErr != nil {
+			fmt.Fprintf(os.Stderr, "%s", decodeErr.Error())
+			return nil, decodeErr
+		}
+	*/
+	saveToS3(respBody, path.Base(prop.url.String()), imageType, sess)
 
 	fmt.Println("decoded image")
 	if decodedImage == nil {
@@ -229,15 +264,17 @@ func loadImageFromUrl(prop Properties, sess *session.Session) (image.Image, erro
 	}
 
 	respHeader.cacheControl = "max-age:3600"
-	respHeader.contentType = "image/jpeg"
+	respHeader.contentType = imageType
+	prop.contentType = imageType
+
 	return transformImage(decodedImage, prop)
 }
 
-func saveToS3(data io.Reader, filename string, sess *session.Session) {
+func saveToS3(data io.Reader, filename, imageType string, sess *session.Session) {
 	log.Println("uploading image to s3")
 
 	uploader := s3manager.NewUploader(sess)
-	result, err := uploader.Upload(&s3manager.UploadInput{Bucket: aws.String("imageresizerbaseimages"), Key: aws.String(filename), ContentType: aws.String("image/jpeg"), Body: data, CacheControl: aws.String("max-age=63072000")})
+	result, err := uploader.Upload(&s3manager.UploadInput{Bucket: aws.String("imageresizerbaseimages"), Key: aws.String(filename), ContentType: aws.String(imageType), Body: data, CacheControl: aws.String("max-age=63072000")})
 
 	if err != nil {
 		fmt.Println("upload err", err.Error())
@@ -246,18 +283,18 @@ func saveToS3(data io.Reader, filename string, sess *session.Session) {
 	log.Println("uploaded to", result.Location)
 }
 
-func getImage(imageUrl string) (io.Reader, error) {
+func getImage(imageUrl string) (io.ReadCloser, string, error) {
 	resp, err := http.Get(imageUrl)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err.Error())
-		return nil, err
+		return nil, "", err
 	}
-
-	return resp.Body, nil
+	fmt.Println("image content type", resp.Header.Get("Content-Type"))
+	return resp.Body, resp.Header.Get("Content-Type"), nil
 
 }
 
-func transformImage(decodedImage image.Image, prop Properties) (image.Image, error) {
+func transformImage(decodedImage image.Image, prop *Properties) (image.Image, error) {
 	imageBound := decodedImage.Bounds().Size()
 	sourceWidth := float64(imageBound.X)
 	if prop.width != 0 {
