@@ -3,7 +3,7 @@ import { onMount } from "svelte";
 
 	let uploadedImage = "";
 	let resultImage = "";
-	let inputValue = "https://sportshub.cbsistatic.com/i/2021/12/18/4a3fdbcc-7ea5-4ca8-b2ac-946e1e893dba/bleach-anime.png?auto=webp&width=822&height=1152&crop=0.714:1,smart";
+	let inputValue = "https://cdn.myanimelist.net/r/360x360/images/anime/3/40451.jpg?s=47c23f5445fc6690845a5e69660cd8c6";
 	let width = 400;
 	let height = 400;
 	let filter = "";
