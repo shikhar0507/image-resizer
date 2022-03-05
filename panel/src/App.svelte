@@ -3,7 +3,7 @@ import { onMount } from "svelte";
 
 	let uploadedImage = "";
 	let resultImage = "";
-	let inputValue = "https://www.thecanadianbazaar.com/wp-content/uploads/2017/11/Sonam-Bajwa-hot-image.jpg";
+	let inputValue = "https://sportshub.cbsistatic.com/i/2021/12/18/4a3fdbcc-7ea5-4ca8-b2ac-946e1e893dba/bleach-anime.png?auto=webp&width=822&height=1152&crop=0.714:1,smart";
 	let width = 400;
 	let height = 400;
 	let filter = "";
@@ -19,7 +19,6 @@ import { onMount } from "svelte";
 	let filtersSwitch = ['grayscale','sepia','negative']
 	let bannerImage = "https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=200&height=200&filter="+filtersSwitch[0]+"&url=https://cdn.pixabay.com/photo/2022/01/15/02/07/windows-6938478_960_720.jpg"
 
-	//https://www.thecanadianbazaar.com/wp-content/uploads/2017/11/Sonam-Bajwa-hot-image.jpg
 	const loadImageFromUrl = (ev) => {
 		if(!inputValue) return
 		if(width <= 0  || !width) {
