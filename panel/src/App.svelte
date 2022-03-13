@@ -68,7 +68,10 @@ import { onMount } from "svelte";
 </script>
 <div class="app">
 	<section class="hero is-small is-black">
+		
 		<div class="hero-body">
+			<h2 class="is-size-1 has-text-weight-bold has-text-centered">DEMO UI</h2>
+			<p class="is-size-4">Refer to the <a href="https://github.com/shikhar0507/image-resizer" target="_" class="has-text-info">Github</a> README to know how to use this directly as a URL in your app</p>
 			<p class="title pt-5">
 				Image Manipulation (resize & filters)
 			</p>
@@ -81,7 +84,8 @@ import { onMount } from "svelte";
 						</div>
 						<p class="mt-4 is-size-5">Example : </p> 
 						<p class="subtitle mt-2">
-							<code class="is-size-6">https://d3078njhubik3z.cloudfront.net/staging/imageResizer<span class="is-size-6 has-text-info">?width=300&height=300</span><span class="is-size-6 has-text-black">&url=https://example.com/image.jpg</span>
+							<code class="is-size-6">
+							<a href="https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=200&height=200&filter=grayscale&url=https://cdn.pixabay.com/photo/2022/01/15/02/07/windows-6938478_960_720.jpg" target="_">https://d3078njhubik3z.cloudfront.net/staging/imageResizer<span class="is-size-6 has-text-info">?width=300&height=300</span><span class="is-size-6 has-text-black">&url=https://cdn.pixabay.com/photo/2022/01/15/02/07/windows-6938478_960_720.jpg</span></a>
 							</code>
 						</p>
 						<p class="subtitle is-size-6 has-text-right mt-6">
