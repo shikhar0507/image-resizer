@@ -48,10 +48,12 @@ Refer to the README inside `panel` dir to know how to run the Demo UI App . That
 <https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=400&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg&filter=sepia>
 
 3. ### Brightness
-<https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=400&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg&filter=brightness&value=100>
+Use a " - " value for `value` param to get a darker image. Ex : `...&value=-20`
+
+<https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=400&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg&filter=brightness&value=50>
 
 4. ### Black & White
-<https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=400&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg&filter=blackAndWhite&value=100>
+<https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=400&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg&filter=blackAndWhite>
 
 5. ### Blur
 <https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=400&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg&filter=blur&value=7>

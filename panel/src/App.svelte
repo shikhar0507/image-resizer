@@ -209,8 +209,10 @@ import { onMount } from "svelte";
 								</label>
 							</div>
 							<div class="column is-one-third">
+							     
 								<label class="radio">
 									Brightness
+									<div class="mt-2 is-size-6 has-text-info mb-2">(use "-" value for a darker image)</div>
 									<input
 										type="radio"
 										bind:group={filter}
