@@ -10,13 +10,20 @@ On the fly image Resizer with filters
 ### Base url : `https://d3078njhubik3z.cloudfront.net/staging/imageResizer?`
 
 ### Required Params
-1. Width `width=<anyWidth>`
-2. Height `height=<anyHeight>`
-3. Url `url=<imageUrl>`
+1. Width `?width=<anyWidth>`
+2. Height `?height=<anyHeight>`
+3. Url `?url=<imageUrl>`
+### Optional Params
+1. filter `?filter=<filtername>`
+2. value `?filter=<filtername>&value=<value>`
 
 ## Example:
 
-<https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=800&height=800&url=https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=300&url=https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/0322_DNA_Nucleotides.jpg/370px-0322_DNA_Nucleotides.jpg>
+<https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=300&height=300&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg>
+
+
+## Demo UI App
+Refer to the README inside `panel` dir to know how to run the Demo UI App .  
 
 ## Filters
 
