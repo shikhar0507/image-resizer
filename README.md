@@ -1,5 +1,7 @@
 # Image-resizer
-On the fly image Resizer with filters
+On the fly image Resizer with filters. THis is a **FREE** application hosted on AWS Cloudfront. Use it as you like.
+
+This uses nearest neighbour algorithm for faster image resizing.
 
 ### Supported Image types
 1. jpeg/jpg
@@ -23,7 +25,7 @@ On the fly image Resizer with filters
 
 
 ## Demo UI App
-Refer to the README inside `panel` dir to know how to run the Demo UI App .  
+Refer to the README inside `panel` dir to know how to run the Demo UI App . That app is build with SVELTE 
 
 ## Filters
 
@@ -61,3 +63,13 @@ Refer to the README inside `panel` dir to know how to run the Demo UI App .
 7. ### Positive
 
 <https://d3078njhubik3z.cloudfront.net/staging/imageResizer?width=400&height=400&url=https://centralrecorder.com/wp-content/uploads/2021/07/claymore-season-2-release-810x456-1.jpg&filter=positive>
+
+## How to build locally 
+
+1. Install GO
+2. `go build main.go`
+3. `./main`
+
+### AWS Configuration
+
+Please refer to the AWS Docs on AWS Sam, API Gateway,S3  etc..

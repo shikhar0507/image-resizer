@@ -243,18 +243,6 @@ func loadImageFromUrl(prop *Properties, sess *session.Session) (image.Image, err
 			return nil, decodeErr
 		}
 	}
-	/*
-		if imageType == "image/webp" {
-			decodedImage, decodeErr = webp.Decode(respBody)
-		} else {
-
-		}
-
-		if decodeErr != nil {
-			fmt.Fprintf(os.Stderr, "%s", decodeErr.Error())
-			return nil, decodeErr
-		}
-	*/
 	saveToS3(respBody, path.Base(prop.url.String()), imageType, sess)
 
 	fmt.Println("decoded image")
